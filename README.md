@@ -1,2 +1,4 @@
 # indoor-localization
-Indoor Localization Using WiFi and Bluetooth measurements
+
+Indoor Localization using WiFi and Bluetooth measurements.
+Implemented using SoLoc dataset in google colab.
