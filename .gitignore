@@ -1,4 +1,11 @@
+# Mac Ingonre Files
+*.DS_Store
+# VS Code Settings Files
+.vscode/
+# Remove Python Files
 __pycache__/
+
+# More
 /logs/*
 /old
 dataset/SoLoc/AP
