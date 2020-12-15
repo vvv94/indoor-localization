@@ -5,5 +5,6 @@ Tested in UJIndoorLoc and SoLoc datasets.
 
 # Accuracy Score
 
-UJIndoorLoc MSE : 1.9253
-SoLoc       MSE : 4.9043
+  UJIndoorLoc MSE : 1.9253
+
+  SoLoc       MSE : 4.9043
