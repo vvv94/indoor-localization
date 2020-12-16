@@ -2,13 +2,10 @@ from os import environ
 from sys import path
 
 # Global Settings
-environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-environ["CUDA_VISIBLE_DEVICES"]="-1"
-# os.environ["CUDA_VISIBLE_DEVICES"] = '0' #use GPU with ID=0
 path.append("..")
 
 from tools.utils import Utilities, NormY
-from numpy import reshape, sqrt, mean, square, hstack, array
+from numpy import reshape, sqrt, mean, square, hstack, array, std
 from random import seed
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam, SGD
@@ -19,6 +16,7 @@ from tensorflow.keras.models import Model, load_model, Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.backend import clear_session
+
 
 class EncoderDNN(object):
 
@@ -33,6 +31,7 @@ class EncoderDNN(object):
         self.b=b
 
         self.features = input
+        self.prediction = 2
         self.input = Input((input,))
         self.model_path = model_path + 'model.h5'
         self.normY = NormY()
@@ -41,67 +40,32 @@ class EncoderDNN(object):
         self.lr=lr
         self.dropout=dropout_rate
         self.loss = loss
-        self.activation = 'selu'
+        self.activation = 'elu'
         self.metric = metric
 
-    def get_SAE_network(self):
-
-        self.encode_layer = Dense(128, activation=self.activation, name='en1')(self.input)
-        self.encode_layer = Dense(64, activation=self.activation, name='en2')(self.encode_layer)
-        decode_layer = Dense(128, activation=self.activation, name='de2')(self.encode_layer)
-        decode_layer = Dense(520, activation=self.activation, name='de-1')(decode_layer)
-        #self.encoder= Model(inputs=self.input, outputs=decode_layer)
-
-        return Model(inputs=self.input, outputs=self.encode_layer)
-
     def get_network(self):
-
-        #SAE = self.get_SAE_network()
-        #for layer in SAE.layers:
-        #    layer.trainable = True
-        #input = Reshape((SAE.output_shape[1], 1))(SAE.output)
-
+        
         model = Sequential()
-        model.add(Reshape((self.features, 1), input_shape=(self.features,1)))
-
-        model.add(Conv1D(filters=132, kernel_size=1))
-        model.add(Activation(self.activation))
-        model.add(Dropout(self.dropout))
-
-        model.add(Conv1D(filters=99, kernel_size=22))
-        model.add(Activation(self.activation))
-        model.add(Dropout(self.dropout))
-
-        model.add(Conv1D(filters=66, kernel_size=22))
-        model.add(Activation(self.activation))
-        model.add(Dropout(self.dropout))
-
-        model.add(Conv1D(filters=33, kernel_size=15))
-        model.add(Activation(self.activation))
+        model.add(Input(shape=(self.features,)))
+        #model.add(Dense(units=64, activation=self.activation))
+        model.add(Reshape((model.output_shape[1], 1)))
+        #model.add(Conv1D(filters=128, kernel_size=15, activation=self.activation, ))
         #model.add(Dropout(self.dropout))
-
+        model.add(Conv1D(filters=64, kernel_size=13, activation=self.activation, ))        
+        model.add(Dropout(self.dropout))
+        model.add(Conv1D(filters=32, kernel_size=11, activation=self.activation, ))        
+        model.add(Dropout(self.dropout))
+        model.add(Conv1D(filters=16, kernel_size=11, activation=self.activation, ))
+        model.add(Dropout(self.dropout))
+        model.add(Conv1D(filters=8, kernel_size=12, activation=self.activation, ))
+        model.add(Dropout(self.dropout))
+        model.add(Conv1D(filters=4, kernel_size=13, activation=self.activation, ))
         model.add(Flatten())
-
-        #model.add(Dense(256, activation=self.activation))
-        model.add(Dense(128, activation=self.activation))
-        model.add(Dense(2,   activation=self.activation))
-
-        print(model.summary())
-
-        '''
-        input = Input((self.features,1))
-        x = Conv1D(filters=132, kernel_size=22, activation=self.activation, )(input)
-        x = Dropout(self.dropout)(input)
-        x = Conv1D(filters=99, kernel_size=22, activation=self.activation, )(x)
-        x = Dropout(self.dropout)(x)
-        x = Conv1D(filters=66, kernel_size=22, activation=self.activation, )(x)
-        x = Dropout(self.dropout)(x)
-        x = Conv1D(filters=33, kernel_size=15, activation=self.activation, )(x)
-        x = Flatten()(x)
-        output = Dense(2, activation=self.activation)(x)
-        '''
-        #return Model(inputs=SAE.input, outputs=output)
-        return model # Model(inputs=input, outputs=output)
+        model.add(Dense(units=self.prediction, activation='elu'))
+        model.compile(optimizer=Adam(lr=1e-3),loss=self.loss, metrics=[self.metric])
+        #print(model.summary())
+        print('Hello')
+        return model 
 
     def preprocess(self, x, y, val_x, val_y, validate=False):
 
@@ -117,26 +81,20 @@ class EncoderDNN(object):
 
         return  norm_X, norm_val_X, norm_long, norm_lati, norm_val_long, norm_val_lati
 
-    def fit(self, x, y, val_x, val_y, validate=False, verbose=0):
+    def fit(self, x, y, val_x, val_y, test_x,test_y, validate=False, verbose=0):
 
         # Data pre-processing
         norm_X, norm_val_X, norm_long, norm_lati, norm_val_long, norm_val_lati = self.preprocess(x, y, val_x, val_y,validate)
 
-        #print('\nData Form: ')
-        #nrows, ncols = x.shape
-        #norm_X.reshape(nrows, ncols, 1)
-        #print(norm_X.shape)
-        #print(hstack([norm_long, norm_lati]).shape)
-
         # Load Model
         model = self.get_network()
-        model.compile(optimizer=Adam(lr=1e-3, decay=1e-3/self.epochs),loss=self.loss, metrics=[self.metric])
 
         # Train Model
         if validate:
             history = model.fit(norm_X, hstack([norm_long, norm_lati]),validation_data=(norm_val_X, hstack([norm_val_long, norm_val_lati])), epochs=self.epochs, batch_size=self.batch_size, verbose=verbose)
         else:
             history = model.fit(norm_X, hstack([norm_long, norm_lati]), epochs=self.epochs, batch_size=66, verbose=verbose)
+
 
         #Save Model
         model.save(self.model_path)
@@ -170,8 +128,9 @@ class EncoderDNN(object):
         Y_error = mean(sqrt(square(pred_Y - real_pos[:, 1])))
 
         mean_error = mean(sqrt(square(pred_X - real_pos[:, 0]) + square(pred_Y - real_pos[:, 1])))
-
-        return  X_error, Y_error, mean_error
+        mean_std =  mean( std(pred_X) + std(pred_Y) )
+        
+        return  X_error, Y_error, mean_error, mean_std
 
     def pseudolabels(self, x, batch_size):
 
