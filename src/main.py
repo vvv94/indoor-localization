@@ -10,37 +10,29 @@ from pathlib import Path
 from tools.utils import  Utilities
 from model.network import Network
 from time import time
-from numpy import concatenate, reshape, float, asarray
+from numpy import reshape, float, asarray, vstack
 from random import shuffle, Random
 
 from tensorflow.config.experimental import (VirtualDeviceConfiguration,
                                             list_physical_devices,
                                             set_virtual_device_configuration)
 
-e =2.71828
+import numpy as np
 
 def main():
 
     # Configure GPU
-    set_gpu_limits(gpu_id='',gpu_memory=8024)
+    set_gpu_limits(gpu_id='0',gpu_memory=8024)
 
     # Configure Hyperparameters
-    epochs = 300
-    drop_rate = 0.6
+    epochs = 8000
+    drop_rate = 0.65
     loss = 'mse'
     metric = ['accuracy','mape', 'mae']
-    verbose = 0
+    verbose = 2
     pseudolabelling = False
     pseudo_epochs = 1000
     separate = False
-
-    # Wifi
-    b1=1.0*e
-    r1=109
-
-    # BT
-    b2=1.45*e
-    r2=109
 
     # Load Data
     train_set, test_set, validation_set = Utilities.get_data(train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
@@ -51,8 +43,7 @@ def main():
     # Load model
     model = Network(fig_path=join(Path(__file__).parent.absolute(),'logs/'),
                     model_path=join(Path(__file__).parent.absolute(),'logs/'),
-                    epochs=epochs, batch_size=64, dropout_rate=drop_rate, loss=loss, metric=metric, _seed_=666,
-                    wifi_b=b1, bt_b=b2)
+                    epochs=epochs, batch_size=64, dropout_rate=drop_rate, loss=loss, metric=metric, _seed_=666)
 
     # Train Model
     start = time()
@@ -68,14 +59,14 @@ def main():
 
         start = time()
         # Extract Pseudo-Labels
-        pseudo_labels = model.get_pseudolabels(test_measurements=test_set[:,0])
-        p_train_set = ( Random(seed).shuffle(concatenate([train_set[:,0], test_set[:,0]])),
-                        Random(seed).shuffle(concatenate([train_set[:,1], pseudo_labels])))
+        pseudo_labels = model.get_pseudolabels(test_measurements=(test_set[0],test_set[1]))
+        p_train_set = ( vstack([train_set[0], test_set[0]]), vstack([train_set[1], test_set[1]]), vstack([train_set[2], pseudo_labels]))
+        Random(666).shuffle(p_train_set[0]); Random(666).shuffle(p_train_set[1]); Random(666).shuffle(p_train_set[2])
 
         # Re-Train Model with pseudo-labels Model
         model.epochs = pseudo_epochs
         print('Pseudo Training Started.')
-        model.fit(train_set=p_train_set, validation_set=None, verbose=verbose, plot_training=False)
+        model.fit(train_set=p_train_set, validation_set=validation_set, verbose=verbose, plot_training=False)
         print('Retrained completed in '+ str(time()-start) +' seconds.\n')
 
     # Evaluate Model
@@ -88,7 +79,7 @@ def main():
     print('X Coordinate Error : '+ str(x_error)     + '\t (std : ' + str(x_error_std)  +').\n' +
           'Y Coordinate Error : '+ str(y_error)     + '\t (std : ' + str(y_error_std)  +').\n' +
           'Mean Error         : '+ str(error_mean)  + '\t (std : ' + str(error_std)    +').\n')
-
+    
 
 def set_gpu_limits(gpu_id, gpu_memory):
 

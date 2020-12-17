@@ -10,8 +10,7 @@ from random import seed
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam, SGD
 from tensorflow.keras.losses import MSE, MAE, MAPE, MSLE
-from tensorflow.keras.layers import Dense, Input, Dropout, Conv1D, Flatten, Reshape, MaxPooling1D, BatchNormalization, Activation
-from tensorflow.keras.layers import *
+from tensorflow.keras.layers import Dense, Input, Dropout, Conv1D, Flatten, Reshape, MaxPooling1D, BatchNormalization, Activation, Concatenate, UpSampling1D
 from tensorflow.keras.models import Model, load_model, Sequential
 from tensorflow.keras.utils import plot_model
 from tensorflow.keras.regularizers import l2
@@ -20,13 +19,13 @@ import matplotlib.pyplot as plt
 
 class Network():
 
-    def __init__(self, fig_path, model_path, epochs=10, batch_size=64, loss='mse', metric='accuracy', dropout_rate=0.7, lr=0.001, wifi_b=2.71828, bt_b=2.71828, _seed_=666):
+    def __init__(self, fig_path, model_path, epochs=10, batch_size=64, loss='mse', metric='accuracy', dropout_rate=0.7, lr=0.001, _seed_=666):
 
-        # Preprocessing Parameters
+        # Pre-processing Dataset Parameters
         self.normY = NormY()
         self.rssi_min = 109
-        self.wifi_b = wifi_b
-        self.bt_b = bt_b
+        self.b1 = 0.9
+        self.b2 = 1.4
 
         # Model Required Directories
         self.fig_dir = fig_path
@@ -35,6 +34,7 @@ class Network():
         self.y_model_path = model_path + 'y_model.h5'
         self.x_fig_dir = model_path + 'x_'
         self.y_fig_dir = model_path + 'y_'
+        self.cnn_loc_model = model_path + 'cnn_loc.h5'
 
         # Features
         self.wifi_features = 11
@@ -51,88 +51,87 @@ class Network():
         self.loss = loss
         self.activation = 'elu'
         self.metric = metric
-
+        
         # Initialize Keras
         clear_session()
         seed(_seed_)
         tf.random.set_seed(_seed_)
+        
+    def tf_model(self):
+        
+        # Data
+        cnn_loc = load_model(self.cnn_loc_model)
+        
+        model = Sequential()
+        model.add(Input(shape=(57,)))
+        model.add(Dense(units=64, activation=self.activation))     
+        model.compile(optimizer=Adam(lr=self.lr),loss=self.loss, metrics=[self.metric])
+        for layer in cnn_loc.layers[3:]:
+            model.add(layer)
+    
+        return model
 
     def get_wifi_network(self):
 
         model = Sequential()
-        model.add(Input(shape=(self.wifi_features,)))
-        #model.add(Dense(units=64, activation=self.activation))
-        model.add(Reshape((model.output_shape[1], 1)))
-        model.add(Conv1D(filters=99, kernel_size=4, activation=self.activation, ))
-        model.add(Dropout(self.dropout))
-        model.add(Conv1D(filters=66, kernel_size=4, activation=self.activation, ))
-        model.add(Dropout(self.dropout))
-        model.add(Conv1D(filters=33, kernel_size=5, activation=self.activation, ))
+        model.add(Input(shape=(self.wifi_features,),name='Input_Wifi'))
+        model.add(Reshape((model.output_shape[1], 1), name='Reshape_Wifi'))
+        #model.add(UpSampling1D(size=3))
+        model.add(Dropout(self.dropout, name='DP_1_Wifi'))
+        model.add(Conv1D(filters=32, kernel_size=4, activation=self.activation, name='Conv1D_1_Wifi'))
+        model.add(Conv1D(filters=16, kernel_size=6, activation=self.activation, name='Conv1D_2_Wifi'))
+        model.add(Conv1D(filters=8, kernel_size=3, activation=self.activation, name='Conv1D_3_Wifi'))
+        model.add(Flatten(name='Flatten_Wifi'))
 
         return model
 
     def get_bt_network(self):
 
         model = Sequential()
-        model.add(Input(shape=(self.bt_features,)))
-        #model.add(Dense(units=64, activation=self.activation))
-        model.add(Reshape((model.output_shape[1], 1)))
-        model.add(Conv1D(filters=99, kernel_size=16, activation=self.activation, ))
-        model.add(Dropout(self.dropout))
-        model.add(Conv1D(filters=66, kernel_size=16, activation=self.activation, ))
-        model.add(Dropout(self.dropout))
-        model.add(Conv1D(filters=33, kernel_size=16, activation=self.activation, ))
-
+        model.add(Input(shape=(self.bt_features,),name='Input_BT'))
+        model.add(Reshape((model.output_shape[1], 1), name='Reshape_BT'))
+        model.add(Dropout(self.dropout, name='DP_1_BT'))
+        model.add(Conv1D(filters=64, kernel_size=11, activation=self.activation, name='Conv1D_0_BT'))
+        model.add(Conv1D(filters=96, kernel_size=13, activation=self.activation, name='Conv1D_1_BT'))
+        model.add(Conv1D(filters=96, kernel_size=13, activation=self.activation, name='Conv1D_2_BT'))
+        model.add(Conv1D(filters=32, kernel_size=12, activation=self.activation, name='Conv1D_3_BT'))
+        model.add(Flatten(name='Flatten_BT'))
+        
         return model
 
     def get_network(self, outputs=2, print_parameters=False):
-
+        
         # Load separate models
         wifi_model = self.get_wifi_network()
         bt_model = self.get_bt_network()
 
         # Concatenate models
-        mergedOut = Add()([wifi_model.output,bt_model.output])
-        mergedOut = Flatten()(mergedOut)
-        mergedOut = Dense(units=outputs, activation='elu')(mergedOut)
-        model = Model([wifi_model.input,bt_model.input], mergedOut)
+        x = Concatenate(axis=1)([wifi_model.output,bt_model.output])
+        x = Dense(units=outputs, activation='elu')(x)
+        model = Model([wifi_model.input,bt_model.input], x)
         model.compile(optimizer=Adam(lr=self.lr),loss=self.loss, metrics=[self.metric])
-
+        
         if print_parameters:
             print(model.summary())
-
+        
         return model
-
+        
     def preprocess(self, train_set, validation_set, validate=False):
 
         # Split Input Data
         train_wifi_x, train_bt_x, train_labels = train_set
         val_wifi_x, val_bt_x, validation_labels = validation_set
 
-        if validate:
-            print(type(train_wifi_x))
-            print(train_wifi_x.shape)
-            print(type(train_bt_x))
-            print(train_bt_x.shape)
-            print(type(train_labels))
-            print(train_labels.shape)
-            print(type(val_wifi_x))
-            print(val_wifi_x.shape)
-            print(type(val_bt_x))
-            print(val_bt_x.shape)
-            print(type(validation_labels))
-            print(validation_labels.shape)
-
         # Train Set
         self.normY.fit(train_labels[:, 0], train_labels[:, 1])
-        train_wifi_x = Utilities.normalizeX(data=train_wifi_x, size=self.wifi_features ,exponent=self.wifi_b, limit=self.rssi_min)
-        train_bt_x = Utilities.normalizeX(data=train_bt_x, size=self.bt_features, exponent=self.bt_b, limit=self.rssi_min, wifi=False)
+        train_wifi_x = Utilities.normalizeX(data=train_wifi_x, size=self.wifi_features ,exponent=self.b1, limit=self.rssi_min)
+        train_bt_x = Utilities.normalizeX(data=train_bt_x, size=self.bt_features, exponent=self.b2, limit=self.rssi_min, wifi=False)
         x_labels, y_labels = self.normY.normalizeY(long_data=train_labels[:, 0], lati_data=train_labels[:, 1])
 
         # Validation Set
-        self.normY.fit(validation_labels[:, 0], validation_labels[:, 1]) if validate else self.normY.fit(train_labels[:, 0], train_labels[:, 1])
-        val_wifi_x = Utilities.normalizeX(data=val_wifi_x, size=self.wifi_features, exponent=self.wifi_b, limit=self.rssi_min) if validate else []
-        val_bt_x = Utilities.normalizeX(data=val_bt_x, size=self.bt_features, exponent=self.bt_b, limit=self.rssi_min, wifi=False) if validate else []
+        self.normY.fit(validation_labels[:, 0], validation_labels[:, 1]) if validate else None
+        val_wifi_x = Utilities.normalizeX(data=val_wifi_x, size=self.wifi_features, exponent=self.b1, limit=self.rssi_min) if validate else []
+        val_bt_x = Utilities.normalizeX(data=val_bt_x, size=self.bt_features, exponent=self.b2, limit=self.rssi_min, wifi=False) if validate else []
         val_x_labels, val_y_labels = self.normY.normalizeY(long_data=validation_labels[:, 0], lati_data=validation_labels[:, 1]) if validate else (array([]),array([]))
 
         # Combine into train/test sets
@@ -148,9 +147,9 @@ class Network():
 
         # Load Model
         model = self.get_network(outputs=self.classes, print_parameters=False)
-
+        
         # Train Model
-        history = model.fit(x=[train_set[0],train_set[1]],
+        history = model.fit(x=[train_set[0],train_set[1]], # hstack([train_set[0],train_set[1]])
                             y=train_set[2],
                             batch_size=self.batch_size, epochs=self.epochs, verbose=verbose)
 
@@ -163,14 +162,16 @@ class Network():
     def predict(self, test_measurements):
 
         # Convert Input
-        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.wifi_b, limit=self.rssi_min)
-        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.bt_b, limit=self.rssi_min, wifi=False)
+        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.b1, limit=self.rssi_min)
+        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.b2, limit=self.rssi_min, wifi=False)
 
         # Load model
         model = load_model(self.model_path)
 
         # Calculate Prediction
-        prediction = model.predict(x=[test_wifi_measurements,test_bt_measurements], batch_size=self.batch_size, verbose=0)
+        #hstack([test_wifi_measurements,test_bt_measurements])
+        prediction = model.predict(x=[test_wifi_measurements,test_bt_measurements], #hstack([test_wifi_measurements,test_bt_measurements]),
+                                   batch_size=self.batch_size, verbose=0)
 
         # Normalize Output
         x_coords, y_coords = self.normY.reverse_normalizeY(prediction[:, 0],prediction[:, 1])
@@ -202,8 +203,8 @@ class Network():
     def get_pseudolabels(self,test_measurements):
 
         # Convert Input
-        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.wifi_b, limit=self.rssi_min)
-        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.bt_b, limit=self.rssi_min, wifi=False)
+        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.b1, limit=self.rssi_min)
+        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.b2, limit=self.rssi_min, wifi=False)
 
         # Load model
         model = load_model(self.model_path)
@@ -301,17 +302,7 @@ class Network():
 
         # Split labels in X-Y dimensions
         x_labels, y_labels = train_set[2][:,0], train_set[2][:,1]
-        """
-        print('|------------------------------------|')
-        print(train_set[0][:,0])
-        print('|------------------------------------|')
-        print(train_set[0][:,1])
-        print('|------------------------------------|')
-        print(train_set[2][:,0])
-        print('|------------------------------------|')
-        print(train_set[2][:,1])
-        print('|------------------------------------|')
-        """
+
         # Load Model
         x_model = self.get_network(outputs=1, print_parameters=False)
         y_model = self.get_network(outputs=1, print_parameters=False)
@@ -331,8 +322,8 @@ class Network():
     def predict_separated(self, test_measurements):
 
         # Convert Input
-        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.wifi_b, limit=self.rssi_min)
-        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.bt_b, limit=self.rssi_min, wifi=False)
+        test_wifi_measurements = Utilities.normalizeX(data=test_measurements[0], size=self.wifi_features, exponent=self.b1, limit=self.rssi_min)
+        test_bt_measurements = Utilities.normalizeX(data=test_measurements[1], size=self.bt_features, exponent=self.b2, limit=self.rssi_min, wifi=False)
 
         # Load model
         x_model = load_model(self.x_model_path)

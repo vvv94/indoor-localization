@@ -1,6 +1,6 @@
 from pandas import read_csv, get_dummies
 from numpy import copy, shape, float, reshape, argmax, round, array, ndindex
-
+from math import e
 
 class Utilities:
 
@@ -31,7 +31,7 @@ class Utilities:
             return Utilities.normalize_beacons(data=data, exponent=exponent, accepted=limit).reshape([-1, size])
 
     @staticmethod
-    def normalize_wifi(data, exponent, accepted=88, max=40):
+    def normalize_wifi(data, exponent, accepted=109, max=40):
 
         rssi = copy(data).astype(float)
         for x,y in ndindex(rssi.shape):
@@ -42,16 +42,16 @@ class Utilities:
             if abs(rssi[x,y]) > accepted:
                 rssi[x,y] = 0
 
-            elif abs(rssi[x,y]) == max:
-                rssi[x,y]=1
+            #elif abs(rssi[x,y]) == max:
+            #    rssi[x,y]=1.0
 
             else :
-                rssi[x,y] = ((rssi[x,y] + accepted) / float(accepted)) ** exponent
+                rssi[x,y] = ((-rssi[x,y]-accepted) / float(-accepted)) ** (exponent*e)
 
         return rssi
 
     @staticmethod
-    def normalize_beacons(data, exponent, accepted=100, max=59):
+    def normalize_beacons(data, exponent, accepted=109, max=59):
 
         rssi = copy(data).astype(float)
         for x,y in ndindex(rssi.shape):
@@ -62,12 +62,12 @@ class Utilities:
             if abs(rssi[x,y]) > accepted :
                 rssi[x,y] = 0
 
-            elif abs(rssi[x,y]) == max :
-                rssi[x,y]=1
+            #elif abs(rssi[x,y]) == max :
+            #    rssi[x,y]=1.0
 
             else :
-                rssi[x,y] = ((rssi[x,y] + accepted) / float(accepted)) ** exponent
-
+                rssi[x,y] = ((-rssi[x,y]-accepted) / float(-accepted)) ** (exponent*e)
+        
         return rssi
 
     @staticmethod
