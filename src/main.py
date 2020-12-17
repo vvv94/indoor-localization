@@ -8,135 +8,87 @@ import matplotlib.pyplot as plt
 from sys import exit
 from pathlib import Path
 from tools.utils import  Utilities
-from model.model import EncoderDNN
+from model.network import Network
 from time import time
 from numpy import concatenate, reshape, float, asarray
 from random import shuffle, Random
-from sklearn.metrics import r2_score
 
 from tensorflow.config.experimental import (VirtualDeviceConfiguration,
                                             list_physical_devices,
                                             set_virtual_device_configuration)
 
-# Train Settings
-data_features = 57 #11
-epochs = 6000 # 4000
-drop_rate = 0.6
-batch_size = 64
-validate = True
-optimizer = 'Adam' # Adam, SGD
-loss = 'mse' # MSE, MAE, MAPE, MSLE
-metric = ['accuracy','mape', 'mae']
-
-seed = 666
-pseudolabelling = False
-pseudo_epochs = 1000
-
-# Monitor Parameters
-verbose = 2
-plot = False
-UJIndoorLoc = False
-validate = False
+e =2.71828
 
 def main():
 
     # Configure GPU
-    set_gpu_limits(gpu_id='0',gpu_memory=8024)
+    set_gpu_limits(gpu_id='',gpu_memory=8024)
 
-    # Load data
-    if UJIndoorLoc:
-        train_dir = join(Path(__file__).parent.parent.absolute(),'dataset/UJIndoorLoc/Train.csv')
-        valid_dir = join(Path(__file__).parent.parent.absolute(),'dataset/UJIndoorLoc/Validate.csv')
-        test_dir = join(Path(__file__).parent.parent.absolute(),'dataset/UJIndoorLoc/Test.csv')
-        fig_dir = join(Path(__file__).parent.absolute(),'logs/')
-        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Utilities.get_data(train_dir=train_dir, valid_dir=valid_dir, test_dir=test_dir, sep=data_features, validate=validate)
-        train_y, valid_y, test_y = preprocess(train_y), preprocess(valid_y), preprocess(test_y)
-    else:
-        train_dir = join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv')
-        valid_dir = join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv')
-        test_dir = join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv')
-        (train_x, train_y), (valid_x, valid_y), (test_x, test_y) = Utilities.get_data(train_dir=train_dir, valid_dir=valid_dir, test_dir=test_dir, sep=data_features, validate=True)
-        new_train_y = concatenate([train_y, valid_y])
-        new_train_x = concatenate([train_x, valid_x])
-        
-    # Load Model
-    model_path = join(Path(__file__).parent.absolute(),'logs/')
-    model = EncoderDNN(input=data_features, model_path=model_path, epochs=epochs, dropout_rate=drop_rate, batch_size=batch_size, loss=loss, optimizer=optimizer, metric=metric, b=2.71828, _seed_=seed)
+    # Configure Hyperparameters
+    epochs = 300
+    drop_rate = 0.6
+    loss = 'mse'
+    metric = ['accuracy','mape', 'mae']
+    verbose = 0
+    pseudolabelling = False
+    pseudo_epochs = 1000
+    separate = False
+
+    # Wifi
+    b1=1.0*e
+    r1=109
+
+    # BT
+    b2=1.45*e
+    r2=109
+
+    # Load Data
+    train_set, test_set, validation_set = Utilities.get_data(train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
+                                                valid_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv'),
+                                                test_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv'),
+                                                features=[11,46], validate=False)
+
+    # Load model
+    model = Network(fig_path=join(Path(__file__).parent.absolute(),'logs/'),
+                    model_path=join(Path(__file__).parent.absolute(),'logs/'),
+                    epochs=epochs, batch_size=64, dropout_rate=drop_rate, loss=loss, metric=metric, _seed_=666,
+                    wifi_b=b1, bt_b=b2)
 
     # Train Model
     start = time()
-    print('Training Started...')
-    history = model.fit(x=train_x, y=train_y, val_x=valid_x, val_y=valid_y, validate=validate, verbose=verbose, test_x=test_x,test_y=test_y)
+    print('Training Started.')
+    if separate:
+        model.fit_separated(train_set=train_set, validation_set=validation_set, verbose=verbose, plot_training=False)
+    else:
+        model.fit(train_set=train_set, validation_set=validation_set, verbose=verbose, plot_training=False)
     print('Training completed in '+ str(time()-start) +' seconds.\n')
-
-    if plot:
-
-        plt.plot(history.history['accuracy'])
-        plt.plot(history.history['val_accuracy'])
-        plt.title('model accuracy')
-        plt.ylabel('accuracy')
-        plt.xlabel('epoch')
-        plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig(fname=fig_dir+'accuracy.png',dpi=1000)
-        plt.close()
-        
-        # summarize history for loss
-        plt.plot(history.history['loss'])
-        plt.plot(history.history['val_loss'])
-        plt.title('model loss')
-        plt.ylabel('loss')
-        plt.xlabel('epoch')
-        plt.legend(['train', 'test'], loc='upper left')
-        plt.savefig(fname=fig_dir+'loss.png',dpi=1000)
-        plt.close()
 
     # Pseudo-labelling Training
     if pseudolabelling:
+
         start = time()
-        pseudo_train_y = model.pseudolabels(x=test_x, batch_size=batch_size)
-        new_train_y = concatenate([train_y, pseudo_train_y])
-        new_train_x = concatenate([train_x, test_x])
-        Random(seed).shuffle(new_train_y)
-        Random(seed).shuffle(new_train_x)
+        # Extract Pseudo-Labels
+        pseudo_labels = model.get_pseudolabels(test_measurements=test_set[:,0])
+        p_train_set = ( Random(seed).shuffle(concatenate([train_set[:,0], test_set[:,0]])),
+                        Random(seed).shuffle(concatenate([train_set[:,1], pseudo_labels])))
 
         # Re-Train Model with pseudo-labels Model
         model.epochs = pseudo_epochs
-        print('Pseudo Training Started...')
-        history = model.fit(x=train_x, y=train_y, val_x=valid_x, val_y=valid_y, validate=validate, verbose=verbose)
+        print('Pseudo Training Started.')
+        model.fit(train_set=p_train_set, validation_set=None, verbose=verbose, plot_training=False)
         print('Retrained completed in '+ str(time()-start) +' seconds.\n')
-
-        if plot:
-            plt.plot(history.history['accuracy'])
-            plt.plot(history.history['val_accuracy'])
-            plt.title('model accuracy')
-            plt.ylabel('accuracy')
-            plt.xlabel('epoch')
-            plt.legend(['train', 'test'], loc='upper left')
-            plt.show()
-            # summarize history for loss
-            plt.plot(history.history['loss'])
-            plt.plot(history.history['val_loss'])
-            plt.title('model loss')
-            plt.ylabel('loss')
-            plt.xlabel('epoch')
-            plt.legend(['train', 'test'], loc='upper left')
-            plt.show()
-            plt.savefig(fig_dir+'retrain_accuracy.png',dpi=1000)
 
     # Evaluate Model
     start = time()
-    print('Evaluation Started...')
-    pos_X_error, pos_Y_error, mean_error, mean_std = model.error(test_input=test_x, real_pos=test_y)
+    print('Evaluation Started.')
+    x_error, x_error_std, y_error, y_error_std, error_mean, error_std = model.error(test_measurements=(test_set[0],test_set[1]), test_labels=test_set[2], separate=separate)
     print('Evaluation Completed in ' + str(time()-start) + ' seconds.\n')
-    print('X Coordinate Error : '+str(pos_X_error) +'.\nY Coordinate Error : '+str(pos_Y_error) +'.\nMean Error : '+str(mean_error) +'.\nMean Standard Deviation : ' + str(mean_std)+'\n')
 
-def preprocess(coords):
+    # Print Results
+    print('X Coordinate Error : '+ str(x_error)     + '\t (std : ' + str(x_error_std)  +').\n' +
+          'Y Coordinate Error : '+ str(y_error)     + '\t (std : ' + str(y_error_std)  +').\n' +
+          'Mean Error         : '+ str(error_mean)  + '\t (std : ' + str(error_std)    +').\n')
 
-    for i in range(len(coords)):
-        for j in range(2):
-            coords[i][j] = float(str(coords[i][j]).split('.')[0] + '.' + "".join(str(coords[i][j]).split('.')[1:]))
-
-    return asarray(coords).astype('float32')
 
 def set_gpu_limits(gpu_id, gpu_memory):
 

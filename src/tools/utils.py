@@ -1,45 +1,74 @@
 from pandas import read_csv, get_dummies
-from numpy import copy, shape, float, reshape, argmax, round
+from numpy import copy, shape, float, reshape, argmax, round, array, ndindex
 
 
 class Utilities:
 
     @staticmethod
-    def get_data(train_dir, valid_dir, test_dir, sep, validate=False):
-        if validate:
-            return Utilities.load_data_perspective(data_dir=train_dir,sep=sep),Utilities.load_data_perspective(data_dir=valid_dir,sep=sep),Utilities.load_data_perspective(data_dir=test_dir,sep=sep)
+    def get_data(train_dir, valid_dir, test_dir, features=[11,46], validate=False):
+
+        train_set = Utilities.load_data_perspective(data_dir=train_dir,     wifi_features=features[0],  bt_features=features[1])
+        test_set = Utilities.load_data_perspective(data_dir=test_dir,       wifi_features=features[0],  bt_features=features[1])
+        validate_set = Utilities.load_data_perspective(data_dir=valid_dir,  wifi_features=features[0],  bt_features=features[1]) if validate else (array([]),array([]),array([]))
+
+        return train_set, test_set, validate_set
+
+    @staticmethod
+    def load_data_perspective(data_dir, wifi_features=11, bt_features=46):
+
+        data = read_csv(data_dir,sep=';')
+
+        return ((data.T[:wifi_features].T).to_numpy(),
+                (data.T[wifi_features:(wifi_features+bt_features)].T).to_numpy(),
+                (data.T[(bt_features+wifi_features):].T).to_numpy())
+
+    @staticmethod
+    def normalizeX(data, size, exponent, limit, wifi=True):
+
+        if wifi:
+            return Utilities.normalize_wifi(data=data, exponent=exponent, accepted=limit).reshape([-1, size])
         else:
-            return Utilities.load_data_perspective(data_dir=train_dir,sep=sep),(None,None),Utilities.load_data_perspective(data_dir=test_dir,sep=sep)
+            return Utilities.normalize_beacons(data=data, exponent=exponent, accepted=limit).reshape([-1, size])
 
     @staticmethod
-    def load_data_perspective(data_dir, sep):
+    def normalize_wifi(data, exponent, accepted=88, max=40):
 
-        data_frame = read_csv(data_dir,sep=';')
-        data_x = data_frame.T[:sep].T
-        data_y = data_frame.T[sep:].T
+        rssi = copy(data).astype(float)
+        for x,y in ndindex(rssi.shape):
 
-        return data_x.to_numpy(), data_y.to_numpy()
+            # Make sure data are in correct form
+            assert abs(rssi[x,y]) >= max , 'RSSI Values are corrupted :' + str(rssi[x,y])
+
+            if abs(rssi[x,y]) > accepted:
+                rssi[x,y] = 0
+
+            elif abs(rssi[x,y]) == max:
+                rssi[x,y]=1
+
+            else :
+                rssi[x,y] = ((rssi[x,y] + accepted) / float(accepted)) ** exponent
+
+        return rssi
 
     @staticmethod
-    def normalizeX(data, size, b=2.71828):
-        return Utilities.normalizeX_powered(data, b).reshape([-1, size])
+    def normalize_beacons(data, exponent, accepted=100, max=59):
 
-    @staticmethod
-    def normalizeX_powered(data,b):
+        rssi = copy(data).astype(float)
+        for x,y in ndindex(rssi.shape):
 
-        res = copy(data).astype(float)
-        for i in range(shape(res)[0]):
-            for j in range(shape(res)[1]):
-                if (res[i][j] >50)|(res[i][j]==None)|(res[i][j]<-95):
-                    res[i][j] = 0
-                elif (res[i][j]>=0):
-                    res[i][j]=1
+            # Make sure data are in correct form
+            assert abs(rssi[x,y]) >= max , 'RSSI Values are corrupted :' + str(rssi[x,y])
 
-                else :
-                    res[i][j] = ((95 + res[i][j])/95.0) ** b
-                    # res[i][j] = (0.01 * (110 + res[i][j])) ** 2.71828
+            if abs(rssi[x,y]) > accepted :
+                rssi[x,y] = 0
 
-        return res
+            elif abs(rssi[x,y]) == max :
+                rssi[x,y]=1
+
+            else :
+                rssi[x,y] = ((rssi[x,y] + accepted) / float(accepted)) ** exponent
+
+        return rssi
 
     @staticmethod
     def oneHotEncode(arr):

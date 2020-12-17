@@ -63,8 +63,7 @@ class EncoderDNN(object):
         model.add(Flatten())
         model.add(Dense(units=self.prediction, activation='elu'))
         model.compile(optimizer=Adam(lr=1e-3),loss=self.loss, metrics=[self.metric])
-        #print(model.summary())
-        print('Hello')
+        print(model.summary())
         return model 
 
     def preprocess(self, x, y, val_x, val_y, validate=False):
