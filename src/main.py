@@ -23,35 +23,51 @@ import numpy as np
 def main():
 
     # Configure GPU
-    set_gpu_limits(gpu_id='',gpu_memory=8024)
+    set_gpu_limits(gpu_id='0',gpu_memory=8024)
 
     # Configure Hyperparameters
-    epochs = 1500
-    drop_rate = 0.65
-    loss = 'mse'
+    epochs = 1000
+    drop_rate = 0.4
+    activation = 'relu'
+    loss = 'mae' # huber_loss # mse
     metric = ['accuracy','mape', 'mae']
     verbose = 2
+    
+    # Hypothesis 1
     pseudolabelling = False
     pseudo_epochs = 1000
+    
+    # Hypothesis 2
     separate = False
 
+    # Hypothesis 3    
+    augment = False
+    max_dist=3.12
+    min_size=3
+        
     # Augment Data
-    augmented_data = Augmentation(data_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
-                                  augment_file=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv')).data_augmentation(save_to_csv=True, min_point_dist=3, min_cluster_points=3)
+    if augment:
+        Augmentation(data_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
+                     augment_file=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv')).data_augmentation(save_to_csv=True, max_dist=max_dist, min_size=min_size, seed=666)
     
     
     # Load Data
-    train_set, test_set, validation_set, augment_set = Utilities.get_data(train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
-                                                                          valid_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv'),
-                                                                          test_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv'),
-                                                                          aug_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv'),
-                                                                          features=[11,46], validate=False, augment=True)
-    train_set = Utilities.concatinate_data(train_set, augment_set, 666)
+    train_set, test_set, validation_set, augment_set, train_scaler, test_scaler = Utilities.get_data(
+        train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
+        valid_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv'),
+        test_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv'),
+        aug_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv'),
+        features=[11,46], validate=False, augment=augment)
+    
+
+    if augment:
+        train_set = Utilities.concatinate_data(train_set, augment_set, shuffled=False, seed=666)
 
     # Load model
     model = Network(fig_path=join(Path(__file__).parent.absolute(),'logs/'),
                     model_path=join(Path(__file__).parent.absolute(),'logs/'),
-                    epochs=epochs, batch_size=64, dropout_rate=drop_rate, loss=loss, metric=metric, _seed_=666)
+                    epochs=epochs, batch_size=64, dropout_rate=drop_rate, loss=loss, metric=metric, _seed_=666, activation=activation,
+                    train_scaler=train_scaler, test_scaler=test_scaler)
 
     # Train Model
     start = time()

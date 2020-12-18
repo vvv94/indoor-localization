@@ -1,42 +1,49 @@
 from pandas import read_csv, get_dummies
-from numpy import copy, shape, float, reshape, argmax, round, array, ndindex, vstack
+from numpy import copy, shape, float, reshape, argmax, round, array, ndindex, vstack, squeeze
 from random import Random, shuffle
 from math import e
+from sklearn.preprocessing import MinMaxScaler
 
 class Utilities:
 
     @staticmethod
-    def concatinate_data(tuple1,tuple2, seed):
+    def concatinate_data(tuple1,tuple2, seed=666, shuffled=False):
 
         assert len(tuple1)==3
         assert len(tuple2)==3
 
         new_tuple = ( vstack([tuple1[0], tuple2[0]]), vstack([tuple1[1], tuple2[1]]), vstack([tuple1[2], tuple2[2]]))
-
-        Random(seed).shuffle(new_tuple[0])
-        Random(seed).shuffle(new_tuple[1])
-        Random(seed).shuffle(new_tuple[2])
+        if shuffled:
+            Random(seed).shuffle(new_tuple[0])
+            Random(seed).shuffle(new_tuple[1])
+            Random(seed).shuffle(new_tuple[2])
 
         return new_tuple
 
     @staticmethod
     def get_data(train_dir, valid_dir, test_dir, aug_dir, features=[11,46], validate=False, augment=False):
 
-        train_set = Utilities.load_data_perspective(data_dir=train_dir,     wifi_features=features[0],  bt_features=features[1])
-        test_set = Utilities.load_data_perspective(data_dir=test_dir,       wifi_features=features[0],  bt_features=features[1])
-        validate_set = Utilities.load_data_perspective(data_dir=valid_dir,  wifi_features=features[0],  bt_features=features[1]) if validate else (array([]),array([]),array([]))
-        augment_set = Utilities.load_data_perspective(data_dir=aug_dir,     wifi_features=features[0],  bt_features=features[1]) if augment else (array([]),array([]),array([]))
-        return train_set, test_set, validate_set, augment_set
+        train_set, train_scaler = Utilities.load_data_perspective(data_dir=train_dir,   wifi_features=features[0],  bt_features=features[1])
+        test_set, test_scaler = Utilities.load_data_perspective(data_dir=test_dir,      wifi_features=features[0],  bt_features=features[1])
+        validate_set, _ = Utilities.load_data_perspective(data_dir=valid_dir,  wifi_features=features[0],  bt_features=features[1]) if validate else (array([]),array([]),array([])), ([],[])
+        augment_set, _ = Utilities.load_data_perspective(data_dir=aug_dir,     wifi_features=features[0],  bt_features=features[1]) if augment else (array([]),array([]),array([])), ([],[])
+
+        augment_set = augment_set[0]
+        
+        return train_set, test_set, validate_set, augment_set, train_scaler, test_scaler
 
     @staticmethod
     def load_data_perspective(data_dir, wifi_features=11, bt_features=46):
 
         data = read_csv(data_dir,sep=';')
+        
+        x_scaler, y_scaler = MinMaxScaler(feature_range=(0, 1)), MinMaxScaler(feature_range=(0, 1))
+        x_scaler.fit(X=data.T.iloc[-2].T.to_numpy().reshape(-1,1)); y_scaler.fit(X=data.T.iloc[-1].T.to_numpy().reshape(-1,1))
 
         return ((data.T[:wifi_features].T).to_numpy(),
                 (data.T[wifi_features:(wifi_features+bt_features)].T).to_numpy(),
-                (data.T[(bt_features+wifi_features):].T).to_numpy())
-
+                (data.T[(bt_features+wifi_features):].T).to_numpy()), (x_scaler, y_scaler)
+        
     @staticmethod
     def normalizeX(data, size, exponent, limit, wifi=True):
 
@@ -61,7 +68,7 @@ class Utilities:
             #    rssi[x,y]=1.0
 
             else :
-                rssi[x,y] = ((-rssi[x,y]-accepted) / float(-accepted)) ** (exponent*e)
+                rssi[x,y] = ((rssi[x,y]+accepted) / float(accepted)) ** (exponent*e)
 
         return rssi
 
@@ -81,59 +88,15 @@ class Utilities:
             #    rssi[x,y]=1.0
 
             else :
-                rssi[x,y] = ((-rssi[x,y]-accepted) / float(-accepted)) ** (exponent*e)
+                rssi[x,y] = ((rssi[x,y]+accepted) / float(accepted)) ** (exponent*e)
         
         return rssi
 
-    @staticmethod
-    def oneHotEncode(arr):
-
-        return get_dummies(reshape(arr, [-1])).values
-
-    @staticmethod
-    def oneHotDecode(arr):
-
-        return argmax(round(arr), axis=1)
+    #  min=[1.85,1.85], max_x=[48.35, 35.95]
+    @ staticmethod
+    def normalize_lables(x,y,scaler):
+        return (squeeze(scaler[0].transform(X=x.reshape(1, -1))), squeeze(scaler[1].transform(X=y.reshape(1, -1))))
 
     @staticmethod
-    def oneHotDecode_list(arrays):
-
-        return [argmax(round(array),axis=1) for array in arrays]
-
-class NormY(object):
-
-    def __init__(self):
-
-        self.long_max=None
-        self.long_min=None
-        self.lati_max=None
-        self.lati_min=None
-        self.long_scale=None
-        self.lati_scale=None
-
-    def fit(self, long, lati):
-
-        self.long_max=max(long)
-        self.long_min=min(long)
-        self.lati_max=max(lati)
-        self.lati_min=min(lati)
-        self.long_scale=self.long_max-self.long_min
-        self.lati_scale=self.lati_max-self.lati_min
-
-    def normalizeY(self,long_data, lati_data):
-
-        long_data = reshape(long_data, [-1, 1])
-        lati_data = reshape(lati_data, [-1, 1])
-        long=(long_data-self.long_min)/self.long_scale
-        lati=(lati_data-self.lati_min)/self.lati_scale
-
-        return long,lati
-
-    def reverse_normalizeY(self,longitude_arr, latitude_arr):
-
-        longitude_arr = reshape(longitude_arr, [-1, 1])
-        latitude_arr = reshape(latitude_arr, [-1, 1])
-        long=(longitude_arr*self.long_scale)+self.long_min
-        lati=(latitude_arr*self.lati_scale)+self.lati_min
-
-        return long,lati
+    def denormalize_labels(x,y, scaler):
+        return squeeze(scaler[0].inverse_transform(X=x.reshape(1, -1))), squeeze(scaler[1].inverse_transform(X=y.reshape(1, -1)))
