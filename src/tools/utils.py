@@ -1,17 +1,32 @@
 from pandas import read_csv, get_dummies
-from numpy import copy, shape, float, reshape, argmax, round, array, ndindex
+from numpy import copy, shape, float, reshape, argmax, round, array, ndindex, vstack
+from random import Random, shuffle
 from math import e
 
 class Utilities:
 
     @staticmethod
-    def get_data(train_dir, valid_dir, test_dir, features=[11,46], validate=False):
+    def concatinate_data(tuple1,tuple2, seed):
+
+        assert len(tuple1)==3
+        assert len(tuple2)==3
+
+        new_tuple = ( vstack([tuple1[0], tuple2[0]]), vstack([tuple1[1], tuple2[1]]), vstack([tuple1[2], tuple2[2]]))
+
+        Random(seed).shuffle(new_tuple[0])
+        Random(seed).shuffle(new_tuple[1])
+        Random(seed).shuffle(new_tuple[2])
+
+        return new_tuple
+
+    @staticmethod
+    def get_data(train_dir, valid_dir, test_dir, aug_dir, features=[11,46], validate=False, augment=False):
 
         train_set = Utilities.load_data_perspective(data_dir=train_dir,     wifi_features=features[0],  bt_features=features[1])
         test_set = Utilities.load_data_perspective(data_dir=test_dir,       wifi_features=features[0],  bt_features=features[1])
         validate_set = Utilities.load_data_perspective(data_dir=valid_dir,  wifi_features=features[0],  bt_features=features[1]) if validate else (array([]),array([]),array([]))
-
-        return train_set, test_set, validate_set
+        augment_set = Utilities.load_data_perspective(data_dir=aug_dir,     wifi_features=features[0],  bt_features=features[1]) if augment else (array([]),array([]),array([]))
+        return train_set, test_set, validate_set, augment_set
 
     @staticmethod
     def load_data_perspective(data_dir, wifi_features=11, bt_features=46):

@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 from sys import exit
 from pathlib import Path
 from tools.utils import  Utilities
+from tools.augmentation import Augmentation
 from model.network import Network
 from time import time
 from numpy import reshape, float, asarray, vstack
@@ -22,10 +23,10 @@ import numpy as np
 def main():
 
     # Configure GPU
-    set_gpu_limits(gpu_id='0',gpu_memory=8024)
+    set_gpu_limits(gpu_id='',gpu_memory=8024)
 
     # Configure Hyperparameters
-    epochs = 8000
+    epochs = 1500
     drop_rate = 0.65
     loss = 'mse'
     metric = ['accuracy','mape', 'mae']
@@ -34,11 +35,18 @@ def main():
     pseudo_epochs = 1000
     separate = False
 
+    # Augment Data
+    augmented_data = Augmentation(data_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
+                                  augment_file=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv')).data_augmentation(save_to_csv=True, min_point_dist=3, min_cluster_points=3)
+    
+    
     # Load Data
-    train_set, test_set, validation_set = Utilities.get_data(train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
-                                                valid_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv'),
-                                                test_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv'),
-                                                features=[11,46], validate=False)
+    train_set, test_set, validation_set, augment_set = Utilities.get_data(train_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
+                                                                          valid_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Validate.csv'),
+                                                                          test_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Test.csv'),
+                                                                          aug_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv'),
+                                                                          features=[11,46], validate=False, augment=True)
+    train_set = Utilities.concatinate_data(train_set, augment_set, 666)
 
     # Load model
     model = Network(fig_path=join(Path(__file__).parent.absolute(),'logs/'),
