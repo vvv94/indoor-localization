@@ -27,7 +27,7 @@ class Network():
         self.test_scaler = test_scaler        
         self.rssi_min = 109
         self.b1 = 0.9
-        self.b2 = 1.4
+        self.b2 = 1.3
 
         # Model Required Directories
         self.fig_dir = fig_path
@@ -80,9 +80,9 @@ class Network():
         model.add(Input(shape=(self.wifi_features,1),name='Input_Wifi'))
         #model.add(Reshape((model.output_shape[1], 1), name='Reshape_Wifi'))
         model.add(Dropout(self.dropout, name='DP_1_Wifi'))
-        model.add(Conv1D(filters=32, kernel_size=4, activation=self.activation, name='Conv1D_1_Wifi'))
-        model.add(Conv1D(filters=16, kernel_size=6, activation=self.activation, name='Conv1D_2_Wifi'))
-        model.add(Conv1D(filters=8, kernel_size=3, activation=self.activation, name='Conv1D_3_Wifi'))
+        model.add(Conv1D(filters=99, kernel_size=4, activation=self.activation, name='Conv1D_1_Wifi'))
+        model.add(Conv1D(filters=66, kernel_size=5, activation=self.activation, name='Conv1D_2_Wifi'))
+        model.add(Conv1D(filters=33, kernel_size=4, activation=self.activation, name='Conv1D_3_Wifi'))
         model.add(Flatten(name='Flatten_Wifi'))
 
         return model
@@ -93,10 +93,9 @@ class Network():
         model.add(Input(shape=(self.bt_features,1),name='Input_BT'))
         #model.add(Reshape((model.output_shape[1], 1), name='Reshape_BT'))
         model.add(Dropout(self.dropout, name='DP_1_BT'))
-        model.add(Conv1D(filters=64, kernel_size=11, activation=self.activation, name='Conv1D_0_BT'))
-        model.add(Conv1D(filters=96, kernel_size=13, activation=self.activation, name='Conv1D_1_BT'))
-        model.add(Conv1D(filters=96, kernel_size=13, activation=self.activation, name='Conv1D_2_BT'))
-        model.add(Conv1D(filters=32, kernel_size=12, activation=self.activation, name='Conv1D_3_BT'))
+        model.add(Conv1D(filters=99, kernel_size=16, activation=self.activation, name='Conv1D_1_BT'))
+        model.add(Conv1D(filters=66, kernel_size=16, activation=self.activation, name='Conv1D_2_BT'))
+        model.add(Conv1D(filters=33, kernel_size=16, activation=self.activation, name='Conv1D_3_BT'))
         model.add(Flatten(name='Flatten_BT'))
         
         return model
@@ -213,7 +212,7 @@ class Network():
         prediction = model.predict(x=test_measurements, batch_size=self.batch_size, verbose=0)
 
         # Normalize Output
-        x_coords, y_coords = Utilities.denormalize_labels(x=prediction[:, 0], y=prediction[:, 1] , scaler=train_scaler)
+        x_coords, y_coords = Utilities.denormalize_labels(x=prediction[:, 0], y=prediction[:, 1] , scaler=self.test_scaler)
 
         # Zip to prediction and convert to proper format
         pseudo_labels = array(list(zip(x_coords, y_coords)))

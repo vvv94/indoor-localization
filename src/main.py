@@ -26,23 +26,23 @@ def main():
     set_gpu_limits(gpu_id='0',gpu_memory=8024)
 
     # Configure Hyperparameters
-    epochs = 1000
-    drop_rate = 0.4
+    epochs = 10000
+    drop_rate = 0.7
     activation = 'relu'
-    loss = 'mae' # huber_loss # mse
+    loss = 'huber_loss' # huber_loss # mse
     metric = ['accuracy','mape', 'mae']
     verbose = 2
     
     # Hypothesis 1
     pseudolabelling = False
-    pseudo_epochs = 1000
+    pseudo_epochs = 300
     
     # Hypothesis 2
     separate = False
 
     # Hypothesis 3    
-    augment = False
-    max_dist=3.12
+    augment = True
+    max_dist=3.1
     min_size=3
         
     # Augment Data
@@ -85,7 +85,7 @@ def main():
         # Extract Pseudo-Labels
         pseudo_labels = model.get_pseudolabels(test_measurements=(test_set[0],test_set[1]))
         p_train_set = ( vstack([train_set[0], test_set[0]]), vstack([train_set[1], test_set[1]]), vstack([train_set[2], pseudo_labels]))
-        Random(666).shuffle(p_train_set[0]); Random(666).shuffle(p_train_set[1]); Random(666).shuffle(p_train_set[2])
+        #Random(666).shuffle(p_train_set[0]); Random(666).shuffle(p_train_set[1]); Random(666).shuffle(p_train_set[2])
 
         # Re-Train Model with pseudo-labels Model
         model.epochs = pseudo_epochs
