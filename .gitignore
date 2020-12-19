@@ -11,3 +11,13 @@ __pycache__/
 dataset/SoLoc/AP
 .vscode
 *.xlsx
+regression2.py
+/test/train.py
+/test/utilities.py
+/test/model.py
+/test/autoencoder.py
+/test/augmentation.py
+/src/model/_model.py
+/test/logs/*
+
+
