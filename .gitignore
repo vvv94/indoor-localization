@@ -19,5 +19,5 @@ regression2.py
 /test/augmentation.py
 /src/model/_model.py
 /test/logs/*
-
+/test/run.sh
 
