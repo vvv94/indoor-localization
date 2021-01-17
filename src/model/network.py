@@ -1,3 +1,5 @@
+import matplotlib.pyplot as plt
+from scipy.stats import sem, t
 from os import environ
 from sys import path
 
@@ -6,6 +8,8 @@ path.append("..")
 
 from tools.utils import Utilities
 from numpy import reshape, sqrt, mean, square, hstack, array, std, column_stack
+from numpy.linalg import norm
+import numpy as np
 from random import seed
 import tensorflow as tf
 from tensorflow.keras.optimizers import Adam, SGD
@@ -16,7 +20,6 @@ from tensorflow.keras.utils import plot_model
 from tensorflow.keras.regularizers import l2
 from tensorflow.keras.backend import clear_session
 from sklearn.preprocessing import MinMaxScaler
-import matplotlib.pyplot as plt
 
 class Network():
 
@@ -196,6 +199,18 @@ class Network():
         x_error,        y_error,        total_error = sqrt(square(x_pos - real_x_pos)), sqrt(square(y_pos - real_y_pos)), sqrt(square(x_pos - real_x_pos) + square(y_pos - real_y_pos))
         m_x_error,      m_y_error,      m_total_error = mean(x_error), mean(y_error), mean(total_error)
         x_error_std,    y_error_std,    total_error_std = std(x_error), std(y_error), std(total_error)
+
+        
+        predict_Y = hstack([x_pos, y_pos])
+        error_CNN = [norm(predict_Y[i] - test_labels[i]) for i in range(test_labels.shape[0])]
+
+        print('The average error using CNN regression :',   '\t',                           np.round(np.mean(error_CNN),4),
+                                                            '\t','minimum error:',          np.round(np.amin(error_CNN),4),
+                                                            '\t','maximum error:',          np.round(np.amax(error_CNN),4),
+                                                            '\t','variance:',               np.round(np.var(error_CNN),4),
+                                                            '\t','mae:',                    np.round(np.mean(np.abs(error_CNN)),4),
+                                                            '\t','median:',                 np.round(np.median(error_CNN),4),
+                                                            '\t','0.95 Conf. Interval:',    np.round(np.array(t.interval(0.95, len(error_CNN) - 1, np.mean(error_CNN), sem(error_CNN))),4))
 
         return  m_x_error, x_error_std, m_y_error, y_error_std, m_total_error, total_error_std
 

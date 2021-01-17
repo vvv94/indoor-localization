@@ -5,39 +5,183 @@ from warnings import  filterwarnings
 #######################################
 # Settings
 environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
-environ["CUDA_VISIBLE_DEVICES"] = '1'
+environ["CUDA_VISIBLE_DEVICES"] = ''
 filterwarnings('ignore')
 #######################################
-
 from tensorflow.config.experimental import (VirtualDeviceConfiguration, list_physical_devices, set_virtual_device_configuration)
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, Model
 from tensorflow.keras.callbacks import EarlyStopping
-from tensorflow.keras.layers import Dense, Dropout, Activation, Conv1D, Input, Reshape, Flatten
 from tensorflow.keras.optimizers import SGD, RMSprop, Adadelta, Adam
 from tensorflow.keras import regularizers
 from tensorflow.keras.backend import clear_session
+from tensorflow.keras.layers import Dense, Dropout, Activation, Conv1D, Input, Reshape, Flatten, BatchNormalization
 from sklearn import svm, preprocessing
-
 from sklearn.cluster import KMeans
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import scale
-
 import matplotlib.pyplot as plt
 import random
 import tensorflow as tf
 from scipy.stats import sem, t
+from time import clock
 
 DEBUG = False
 ED = True
 SVM = False
-NN = False
+NN = True
 CNN = True
-Compare = False
-seed = 666
-verbose = 2
+CNNA = True
+Compare = True
+seed = 2070
+verbose = 0
+split = 1
+trials = 30
+
+def AE(num_features, activation='elu'):
+
+    autoencoder = Sequential()
+    autoencoder.add(Dense(64, input_dim=num_features, activation=activation))
+    autoencoder.add(BatchNormalization())
+    autoencoder.add(Dense(25, activation=activation))
+    autoencoder.add(Dense(25, activation=activation))
+    autoencoder.add(Dense(57, activation=activation))
+    autoencoder.compile(optimizer='adam', loss='mse', metrics=['accuracy'])
+    return autoencoder
+
+def set_layers(model):
+
+    for layer in model.layers:
+        layer.trainable = True
+
+def network(num_outputs, autoencoder, loss='mae', lr=0.00107, drop_rate=0.35, activation='elu', ker_init_method='he_normal', reg_penalty=0.04):
+
+    model = Sequential()
+    model.add(autoencoder)
+    set_layers(model)  # Set layers to Trainable
+    model.add(Reshape((autoencoder.output_shape[1], 1)))
+    model.add(Dropout(drop_rate))
+    model.add(Conv1D(filters=80,  kernel_size=7, activation=activation, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
+    model.add(Dropout(drop_rate))
+    model.add(Conv1D(filters=64,  kernel_size=10, activation=activation, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
+    model.add(Dropout(drop_rate))
+    model.add(Conv1D(filters=32,  kernel_size=13, activation=activation, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
+    model.add(Flatten())
+    model.add(Dense(num_outputs, activation='linear', kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
+    model.compile(loss=loss, optimizer=Adam(lr=lr, beta_1=0.9, beta_2=0.999, epsilon=1e-08), metrics=['accuracy'])
+    return model
+
+def print_error(error_CNN):
+
+    print('The average error using CNN regression :',   '\t',                           np.round(np.mean(error_CNN),4),
+                                                        '\t','minimum error:',          np.round(np.amin(error_CNN),4),
+                                                        '\t','maximum error:',          np.round(np.amax(error_CNN),4),
+                                                        '\t','variance:',               np.round(np.var(error_CNN),4),
+                                                        '\t','mae:',                    np.round(np.mean(np.abs(error_CNN)),4),
+                                                        '\t','median:',                 np.round(np.median(error_CNN),4),
+                                                        '\t','0.95 Conf. Interval:',    np.round(np.array(t.interval(0.95, len(error_CNN) - 1, np.mean(error_CNN), sem(error_CNN))),4))
+
+def train_model(train_X, train_Y, test_X, test_Y, val_X, val_Y, epochs=350, seed=2070):
+    ###############################################################################################################################################################
+    # Reset State
+    clear_session()
+    random.seed(seed)
+    tf.random.set_seed(seed)
+    ###############################################################################################################################################################
+    # Auto-Encoder (AE) Model
+    autoencoder = AE(num_features=train_X.shape[1], activation='elu')
+    autoencoder.fit(train_X, train_X, validation_data=(val_X, val_X), epochs=30, batch_size=16, verbose=0)
+    ###############################################################################################################################################################
+    # Localization Model
+    model = network(num_outputs=2, autoencoder=autoencoder, loss='mae', activation='elu', ker_init_method='he_normal')
+    ###############################################################################################################################################################
+    # Define EarlyStopping
+    earlyStopping = EarlyStopping(monitor='val_loss', patience=70, verbose=0, mode='auto')
+    ###############################################################################################################################################################
+    # Train Model
+    model.fit(train_X, train_Y, epochs=epochs, batch_size=16, callbacks=[earlyStopping], validation_data=(test_X, test_Y), verbose=verbose)
+    ###############################################################################################################################################################
+    # Evaluate Model
+    train_loss = model.evaluate(train_X,train_Y, batch_size=len(train_Y),verbose=0)
+    val_loss = model.evaluate(val_X, val_Y, batch_size=len(val_Y),verbose=0)
+    test_loss = model.evaluate(test_X, test_Y, batch_size=len(test_Y),verbose=0)
+    ###############################################################################################################################################################
+    # Predict test points locations
+    predict_Y = model.predict(test_X)
+    error_CNN = [ np.linalg.norm(predict_Y[i] - test_Y[i]) for i in range(num_test) ]
+    time_to_predict(model=model,test_X=test_X)
+    ###############################################################################################################################################################
+    return error_CNN
+    ###############################################################################################################################################################
+
+def pre_process(train_data="Train.csv"):
+    #############################################################################################################################################################################
+    # Read train data
+    dataset = pd.read_csv(train_data, sep=';', header=0)
+    rss_values = np.asarray(dataset.iloc[:, 0:-2])
+    locations = np.asarray(dataset.iloc[:, -2:])
+    loc = np.hsplit(locations, 2)
+    #############################################################################################################################################################################
+    #Read test data
+    test_dataset = pd.read_csv("Test.csv", sep=';', header=0)
+    rss_values_test = np.asarray(test_dataset.iloc[:, 0:-2])
+    test_locations = np.asarray(test_dataset.iloc[:, -2:])
+    test_loc = np.hsplit(test_locations, 2)
+    #############################################################################################################################################################################
+    # Min Search
+    x_origin_train, y_origin_train, x_origin_test, y_origin_test = np.amin(loc[0], axis=0), np.amin(loc[1], axis=0), np.amin(test_loc[0], axis=0), np.amin(test_loc[1], axis=0)
+    #origin = np.amin(np.array([[x_origin_train, x_origin_test], [y_origin_train, y_origin_test]]), axis=1)
+    origin = np.amin(np.array([[0.0, 0.0], [0.0, 0.0]]), axis=1)
+    #############################################################################################################################################################################
+    # Max Search
+    x_room_size_train, y_room_size_train, x_room_size_test, y_room_size_test = np.amax(loc[0], axis=0) - x_origin_train, np.amax(loc[1], axis=0) - y_origin_train, np.amax(test_loc[0], axis=0) - x_origin_test, np.amax(test_loc[1], axis=0) - y_origin_test
+    #room_size = np.squeeze(np.amax(np.array([[x_room_size_train, x_room_size_test], [y_room_size_train, y_room_size_test]]), axis=1))
+    room_size = np.squeeze(np.amax(np.array([[50, 50], [37.5, 37.5]]), axis=1))
+    if DEBUG:
+        print(x_origin_train, x_origin_test, y_origin_train, y_origin_test)
+        print(x_room_size_train, x_room_size_test,y_room_size_train, y_room_size_test)
+    #############################################################################################################################################################################
+    # Scale Dataset to [0,1]
+    train_val_X, train_val_Y = preprocessing.scale(np.asarray(rss_values, dtype=np.float64)), np.hstack((loc[0] - origin[0], loc[1] - origin[1]))
+    train_points = len(train_val_X)
+    test_X, test_Y = preprocessing.scale(np.asarray(rss_values_test, dtype=np.float64)), np.hstack((test_loc[0] - origin[0], test_loc[1] - origin[1]))
+    test_points = len(test_X)
+    #############################################################################################################################################################################
+    # Find training position in the training data and permutation
+    # Build Unique Training Grid
+    unique_position = np.vstack({tuple(row) for row in train_val_Y})
+    # create the array to store class of training data
+    train_val_class = np.zeros(len(train_val_Y))
+    # how many points in training grid
+    num_unique_position = len(unique_position)
+    for i in range(num_unique_position):  # for each point in training grid
+        # Find the index which has the same position as the training grid
+        in_this_class = train_val_Y[:] == unique_position[i]
+        in_this_class = in_this_class[:, 0]
+        train_val_class[in_this_class] = i  # label them
+        # Training sample with same location (prepared for permutation)
+        sample_in_this_class = train_val_X[in_this_class]
+    #############################################################################################################################################################################
+    # Split Training/Validation data
+    train_X, val_X, train_Y, val_Y = train_test_split(train_val_X, train_val_Y, test_size=split, random_state=seed)
+    #############################################################################################################################################################################
+    # Draw RF Positions : Red Train/ Blue Test
+    if DEBUG:
+        x_tr, y_tr = train_val_Y.T
+        x_te, y_te = test_Y.T
+        plt.scatter(x_tr, y_tr, color='blue')
+        plt.scatter(x_te, y_te, color='red')
+        plt.show() 
+    #############################################################################################################################################################################
+    return train_X, train_Y, val_X, val_Y, test_X, test_Y, train_val_X, train_val_Y, train_val_class, unique_position, train_points, test_points, room_size
+
+def time_to_predict(model,test_X):
+
+    start = clock()
+    result = model.predict(test_X)
+    mean_time = (clock()-start)/len(test_X)
+    print('Mean Time for measurement was:',mean_time)
 
 if __name__ == '__main__':
-
     ############################################################################################################################################
     # Clear Previous Session and Configure GPU
     ############################################################################################################################################
@@ -56,60 +200,7 @@ if __name__ == '__main__':
     ############################################################################################################################################
     # Pre-process Data
     ############################################################################################################################################
-    if True:
-        # Read train data
-        dataset = pd.read_csv("Train.csv",sep=';',header = 0)
-        rss_values = np.asarray(dataset.iloc[:,0:-2])
-        locations = np.asarray(dataset.iloc[:,-2:])
-        loc = np.hsplit(locations,2)
-        ############################################################################################################################################
-        #Read test data
-        test_dataset = pd.read_csv("Test.csv",sep=';',header = 0)
-        rss_values_test = np.asarray(test_dataset.iloc[:,0:-2])
-        test_locations= np.asarray(test_dataset.iloc[:,-2:])
-        test_loc = np.hsplit(test_locations,2)
-        ############################################################################################################################################
-        # Min Search
-        # real is 0,0
-        x_origin_train,y_origin_train,x_origin_test,y_origin_test = np.amin(loc[0],axis=0), np.amin(loc[1],axis=0), np.amin(test_loc[0],axis=0), np.amin(test_loc[1],axis=0)
-        origin =  np.amin(np.array([[x_origin_train, x_origin_test], [y_origin_train, y_origin_test]]), axis=1)
-        ############################################################################################################################################
-        # Max Search
-        # real is 49.9,37.5
-        x_room_size_train, y_room_size_train, x_room_size_test, y_room_size_test = np.amax(loc[0], axis=0) - x_origin_train, np.amax(loc[1], axis=0) - y_origin_train, np.amax(test_loc[0], axis=0) - x_origin_test, np.amax(test_loc[1], axis=0) - y_origin_test
-        room_size =  np.squeeze(np.amax(np.array([[x_room_size_train, x_room_size_test], [y_room_size_train, y_room_size_test]]), axis=1))
-        if DEBUG:
-            print(x_origin_train,x_origin_test,y_origin_train,y_origin_test)
-            print(x_room_size_train,x_room_size_test,y_room_size_train,y_room_size_test)
-        ############################################################################################################################################
-        # Scale Dataset to [0,1]
-        train_val_X, train_val_Y = preprocessing.scale(np.asarray(rss_values, dtype=np.float64)), np.hstack((loc[0] - origin[0], loc[1] - origin[1]))
-        train_points = len(train_val_X)
-        test_X, test_Y = preprocessing.scale(np.asarray(rss_values_test, dtype=np.float64)), np.hstack((test_loc[0] - origin[0], test_loc[1] - origin[1]))
-        test_points = len(test_X)
-        ############################################################################################################################################
-        # Find training position in the training data and permutation
-        # Build Unique Training Grid
-        unique_position = np.vstack({tuple(row) for row in train_val_Y})
-        #
-        train_val_class = np.zeros(len(train_val_Y))#create the array to store class of training data
-        num_unique_position = len(unique_position) #how many points in training grid
-        for i in range(num_unique_position): #for each point in training grid
-            in_this_class = train_val_Y[:] == unique_position[i] #find the index which has the same position as the training grid
-            in_this_class = in_this_class[:,0]
-            train_val_class[in_this_class]= i #label them
-            sample_in_this_class = train_val_X[in_this_class]  # training sample with same location (prepared for permutation)
-        ############################################################################################################################################
-        # Split Training/Validation data
-        train_X, val_X, train_Y, val_Y = train_test_split(train_val_X, train_val_Y, test_size=0.3, random_state=seed)
-        ############################################################################################################################################
-        # Draw RF Positions : Red Train/ Blue Test
-        if DEBUG:
-            x_tr,y_tr = train_val_Y.T
-            x_te,y_te = test_Y.T
-            plt.scatter(x_tr,y_tr,color='blue')
-            plt.scatter(x_te,y_te,color='red')
-            plt.show()
+    train_X, train_Y, val_X, val_Y, test_X, test_Y, train_val_X, train_val_Y, train_val_class, unique_position, train_points, test_points, room_size = pre_process(train_data="Train_orig.csv")
     ############################################################################################################################################
 
     ############################################################################################################################################
@@ -190,59 +281,22 @@ if __name__ == '__main__':
         # Predict test points locations
         predict_Y = model.predict(test_X)
         error_NN = [ np.linalg.norm(predict_Y[i] - test_Y[i]) for i in range(num_test) ]
+        time_to_predict(model=model,test_X=test_X)
     ############################################################################################################################################
 
     ############################################################################################################################################
     # Convolutional Neuron Network Regressor
     ############################################################################################################################################
     if CNN:
-        # Parameters
-        num_input = train_X.shape[1]
-        act_fun = 'relu'
-        loss='mae'
-        epochs = 2500
-        batch =128
-        drop_rate = 0.4
-        reg_penalty = 0.03
-        patience = 70
-        ker_init_method = 'he_normal'
-        adam = Adam(lr=0.0002, beta_1=0.9, beta_2=0.999, epsilon=1e-08)
-        ############################################################################################################################################
-        # Model
-        model = Sequential()
-        model.add(Input(shape=(num_input,1)))
-        model.add(Dropout(drop_rate))
-        #model.add(Conv1D(filters=132, kernel_size=7, activation=act_fun, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
-        #model.add(Dropout(drop_rate))
-        model.add(Conv1D(filters=88,  kernel_size=19, activation=act_fun, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
-        model.add(Dropout(drop_rate))
-        model.add(Conv1D(filters=66,  kernel_size=19, activation=act_fun, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
-        model.add(Dropout(drop_rate))
-        model.add(Conv1D(filters=44,  kernel_size=19, activation=act_fun, kernel_initializer=ker_init_method, kernel_regularizer=regularizers.l2(reg_penalty)))
-        model.add(Flatten())
-        #model.add(Dense(512, activation='linear', kernel_initializer=ker_init_method ,kernel_regularizer=regularizers.l2(reg_penalty)))
-        model.add(Dense(2, activation='linear', kernel_initializer=ker_init_method ,kernel_regularizer=regularizers.l2(reg_penalty)))
-        print(model.summary())
-        model.compile(loss=loss, optimizer=adam, metrics=['accuracy'])
-        ############################################################################################################################################
-        # Define EarlyStopping
-        earlyStopping = EarlyStopping(monitor='val_loss', patience=patience, verbose=0, mode='auto')
-        ############################################################################################################################################
-        # Train Model
-        model.fit(train_X, train_Y, epochs=epochs, batch_size=batch, callbacks=[earlyStopping], validation_data=(val_X, val_Y),verbose=verbose)
-        ############################################################################################################################################
-        # Evaluate Model
-        train_loss = model.evaluate(train_X,train_Y, batch_size=len(train_Y),verbose=0)
-        val_loss = model.evaluate(val_X, val_Y, batch_size=len(val_Y),verbose=0)
-        test_loss = model.evaluate(test_X, test_Y, batch_size=len(test_Y),verbose=0)
-        if DEBUG:
-            print("\nLoss, Accuracy for training data is", ", ".join(map(str, train_loss)))
-            print("Loss, Accuracy for validation data is",", ".join(map(str, val_loss)))
-            print("Loss, Accuracy for test data is", ", ".join(map(str, test_loss)))
-        ############################################################################################################################################
-        # Predict test points locations
-        predict_Y = model.predict(test_X)
-        error_CNN = [ np.linalg.norm(predict_Y[i] - test_Y[i]) for i in range(num_test) ]
+        error_CNN = train_model(train_X=train_X, train_Y=train_Y, test_X=test_X, test_Y=test_Y, val_X=val_X, val_Y=val_Y, seed=random.randint(1,10000))
+    ############################################################################################################################################
+
+    ############################################################################################################################################
+    # Convolutional Neuron Network Regressor + Augmentation
+    ############################################################################################################################################
+    if CNNA:
+        train_X, train_Y, val_X, val_Y, test_X, test_Y,_,_,_,_,_,_,_ = pre_process(train_data="Train.csv")
+        error_CNNA = train_model(train_X=train_X, train_Y=train_Y, test_X=test_X, test_Y=test_Y, val_X=val_X, val_Y=val_Y)
     ############################################################################################################################################
 
     ############################################################################################################################################
@@ -288,15 +342,26 @@ if __name__ == '__main__':
                                                             '\t','median:',                 np.round(np.median(error_CNN),4),
                                                             '\t','0.95 Conf. Interval:',    np.round(np.array(t.interval(0.95, len(error_CNN) - 1, np.mean(error_CNN), sem(error_CNN))),4))
     ############################################################################################################################################
+    if CNNA:
+        print('The average error using CNN regression +AUG:',   '\t',                       np.round(np.mean(error_CNNA),4),
+                                                            '\t','minimum error:',          np.round(np.amin(error_CNNA),4),
+                                                            '\t','maximum error:',          np.round(np.amax(error_CNNA),4),
+                                                            '\t','variance:',               np.round(np.var(error_CNNA),4),
+                                                            '\t','mae:',                    np.round(np.mean(np.abs(error_CNNA)),4),
+                                                            '\t','median:',                 np.round(np.median(error_CNNA),4),
+                                                            '\t','0.95 Conf. Interval:',    np.round(np.array(t.interval(0.95, len(error_CNNA) - 1, np.mean(error_CNNA), sem(error_CNNA))),4))
+    ############################################################################################################################################
     if Compare:
-        print('The average error using SoLoc :',    '\t','Not Given'
+        print('The average error using SoLoc :',    '\t','4.3000'
                                                     '\t','minimum error: Not Given',
                                                     '\t','maximum error: Not Given',
                                                     '\t','variance: Not Given',
-                                                    '\t','mae: 4.30000',
-                                                    '\t','median: 3.90000',
+                                                    '\t','mae: 4.3000',
+                                                    '\t','median: 3.9000',
                                                     '\t','0.95 Conf. Interval: Not Given')
-        plt.boxplot([error_ED, error_svm, error_NN ])
-        plt.xticks([1, 2, 3], ['Euclidean Distance','SVM', 'NN', ' CNN'])
-        plt.show()
-    ############################################################################################################################################
+        plt.boxplot([error_ED, error_NN, error_CNN, error_CNNA ])
+        plt.xticks([1, 2, 3, 4], ['Euclidean Distance','NN', 'CNN', ' CNN + Augmentation'])
+        plt.savefig('boxplot', dpi=1000)
+        plt.close()
+    ############################################################################################################################################`
+

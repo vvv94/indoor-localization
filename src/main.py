@@ -26,7 +26,7 @@ def main():
     set_gpu_limits(gpu_id='0',gpu_memory=8024)
 
     # Configure Hyperparameters
-    epochs = 10000
+    epochs = 1000
     drop_rate = 0.7
     activation = 'relu'
     loss = 'huber_loss' # huber_loss # mse
@@ -48,8 +48,7 @@ def main():
     # Augment Data
     if augment:
         Augmentation(data_dir=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Train.csv'),
-                     augment_file=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv')).data_augmentation(save_to_csv=True, max_dist=max_dist, min_size=min_size, seed=666)
-    
+                    augment_file=join(Path(__file__).parent.parent.absolute(),'dataset/SoLoc/Augment.csv')).data_augmentation(save_to_csv=True, max_dist=max_dist, min_size=min_size, seed=666)
     
     # Load Data
     train_set, test_set, validation_set, augment_set, train_scaler, test_scaler = Utilities.get_data(
@@ -101,9 +100,8 @@ def main():
 
     # Print Results
     print('X Coordinate Error : '+ str(x_error)     + '\t (std : ' + str(x_error_std)  +').\n' +
-          'Y Coordinate Error : '+ str(y_error)     + '\t (std : ' + str(y_error_std)  +').\n' +
-          'Mean Error         : '+ str(error_mean)  + '\t (std : ' + str(error_std)    +').\n')
-    
+        'Y Coordinate Error : '+ str(y_error)     + '\t (std : ' + str(y_error_std)  +').\n' +
+        'Mean Error         : '+ str(error_mean)  + '\t (std : ' + str(error_std)    +').\n')
 
 def set_gpu_limits(gpu_id, gpu_memory):
 
@@ -116,7 +114,6 @@ def set_gpu_limits(gpu_id, gpu_memory):
             set_virtual_device_configuration(gpus[0], [VirtualDeviceConfiguration(memory_limit=gpu_memory)])
         except RuntimeError as e:
             print(e)
-
 
 if __name__ == '__main__':
 
